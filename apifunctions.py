@@ -1,10 +1,15 @@
+# Standard
+import logging, time
+
+# Installed
 import httplib2
-import logging
-import time
 from apiclient.discovery import build
 from oauth2client.client import SignedJwtAssertionCredentials
 from apiclient.http import MediaFileUpload, HttpError
+
+# ALEM
 from settings import KEY_FILE, ACCOUNT
+
 
 logger = logging.getLogger(__name__)
 

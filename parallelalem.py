@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
+# Standard
+import sys, os, shutil, logging
 from multiprocessing import Pool
-import sys
-import alemutils
-import logging
-from settings import *
 from glob import glob
-import os
-import shutil
+
+# ALEM
+import alemutils
+from settings import *
 
 logging.basicConfig(format='%(asctime)s %(name)s[%(levelname)s]:%(message)s', level=logging.INFO)
 

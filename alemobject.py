@@ -1,19 +1,18 @@
-from settings import *
+# Standard
+from pprint import pprint
+from glob import glob
+import sys, os, shutil, csv, time
+import math, logging
+
+# Installed
+from dbfpy import dbf
+import numpy as np
+import gflags, arcpy
+
+# ALEM
 from utilfunctions import *
 from apifunctions import *
-import math
-import logging
-import gflags
-import sys
-import os
-import shutil
-from glob import glob
-import arcpy
-from pprint import pprint  # lint:ok
-import numpy as np
-from dbfpy import dbf
-import csv
-import time
+from settings import *
 
 FLAGS = gflags.FLAGS
 
@@ -135,7 +134,9 @@ class ALEMObject():
 
         if sceneIDs.count(self.sceneId) == 0:
             columns = ['Scene_Id', 'Path', 'Row', 'Year', 'Month','Day','Geom']
-            polygon="""<Polygon><outerBoundaryIs><coordinates> {},{},0 {},{},0 {},{},0 {},{},0 </coordinates></outerBoundaryIs></Polygon>""".format(
+            polygon=(
+                "<Polygon><outerBoundaryIs><coordinates> {},{},0 {},{},0 {},{},0 {},{},0" +
+                "</coordinates></outerBoundaryIs></Polygon>").format(
                 self.metadata['CORNER_LR_LON_PRODUCT'],
                 self.metadata['CORNER_LR_LAT_PRODUCT'],
                 self.metadata['CORNER_LL_LON_PRODUCT'],
@@ -156,10 +157,16 @@ class ALEMObject():
             ]
 
             fusionTable.insert_list(ID_IMAGES, [columns, data])
-            logger.info('Uploaded metadata to fusion table for scene {scene}'.format(**self.string_args))
+            logger.info(
+                'Uploaded metadata to fusion table for scene {scene}'
+                .format(**self.string_args)
+            )
 
         else:
-            logger.info('Did not upload. Scene info for {scene} already in fusion table.'.format(**self.string_args))
+            logger.info(
+                'Did not upload. Scene info for {scene} already in fusion table.'
+                .format(**self.string_args)
+            )
 
         self.next = 'arcgis_prepare_toa'
         return None
@@ -206,7 +213,8 @@ class ALEMObject():
         bqa_reclass = (TEMP_GRID_FOLDER + 'bqa_reclass').format(**self.string_args)
         bqa_band_tiff = (IMAGE_FOLDER + '{scene}_BQA.TIF').format(**self.string_args)
 
-        arcpy.gp.Reclassify_sa(bqa_band_tiff, "Value", "0 10000 1;10000 16381 NODATA;16381 24000 1;24000 70000 NODATA", bqa_reclass, "DATA")
+        arcpy.gp.Reclassify_sa(bqa_band_tiff, "Value", 
+            "0 10000 1;10000 16381 NODATA;16381 24000 1;24000 70000 NODATA", bqa_reclass, "DATA")
 
         for i in self.unique_bands:
             toa_rad_b = (TOA_GRID_FOLDER + 'toa_rad_b{i}').format(i=i, **self.string_args)
@@ -279,41 +287,79 @@ class ALEMObject():
             output_final = (BANDS_DBF_FOLDER + BANDS_FILE).format(**self.string_args)
             field2 = band_name
 
-            if not os.path.exists(output_final) and not os.path.exists(output_final.replace('dbf','csv')):
+            if (not os.path.exists(output_final) 
+                and not os.path.exists(output_final.replace('dbf','csv'))):
+
                 print('Processing band {} of scene {scene}'.format(band_name, **self.string_args))
+
                 with open(PROCESS_FILE.format(**self.string_args), 'w') as f:
                     f.write(output_final)
-                arcpy.gp.ZonalStatisticsAsTable_sa(buffer_file, field1, band_folder, output_all, "DATA", 'ALL')
+
+                arcpy.gp.ZonalStatisticsAsTable_sa(
+                    buffer_file, field1, band_folder, output_all, "DATA", 'ALL'
+                )
+
                 arcpy.Copy_management(output_all, output_final, "")
-                arcpy.AddField_management(output_final,field2, 'DOUBLE', "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+
+                arcpy.AddField_management(
+                    output_final, field2, 'DOUBLE', "", "", "", "", "NULLABLE", "NON_REQUIRED", ""
+                )
+
                 arcpy.CalculateField_management(output_final, field2, '[MEAN]', "VB", "")
-                arcpy.DeleteField_management(output_final, "AREA;MIN;MAX;MEAN;SUM;FID_CARBBA;FID_SAMPLE;Year;Month;Day;Source;Date_freef;Latitude_s;Longitude_;SubSite;Lat_number;LAKENAME_1;LAKENAME_2;SHAPE_LENG;SHAPE_AREA;ID;GRIDCODE;AREA_1;NID_1;ID_1;GRIDCODE_1;NID_12;ZONE-CODE")
+
+                fields_to_drop = (
+                    "AREA;MIN;MAX;MEAN;SUM;FID_CARBBA;FID_SAMPLE;Year;Month;Day;" +
+                    "Source;Date_freef;Latitude_s;Longitude_;SubSite;Lat_number;" + 
+                    "LAKENAME_1;LAKENAME_2;SHAPE_LENG;SHAPE_AREA;ID;GRIDCODE;AREA_1;" +
+                    "NID_1;ID_1;GRIDCODE_1;NID_12;ZONE-CODE"
+                )
+
+                arcpy.DeleteField_management(output_final, fields_to_drop)
+
                 os.remove(PROCESS_FILE.format(**self.string_args))
 
-        #logger.info('Performed zstat poly analysis for scene {scene}'.format(**self.string_args))
         if os.path.exists(PROCESS_FILE.format(**self.string_args)):
             os.remove(PROCESS_FILE.format(**self.string_args))
+
         return None
 
     def arcgis_zstat_points_analysis(self, logger=defaultLogger):
 
         #arcpy.ImportToolbox("Model Functions")
-        arcpy.ImportToolbox("C:\\2_ALEM_Lakes_Project\\3.Scripts_for_Analyses\\SplitLayerByAttributes\\SplitLayerByAttributes.tbx")
+        arcpy.ImportToolbox(TBX_LOCATION)
 
         #Split points into separate files
-        intersectParam1 = BUFFERS_90M_FILE + ' #;' + (BUFFERS_FOLDER + BUFFER_FILE).format(**self.string_args) + ' #'
+        intersectParam1 = (
+            BUFFERS_90M_FILE + ' #;' + 
+            (BUFFERS_FOLDER + BUFFER_FILE).format(**self.string_args) + ' #'
+
+        )
         intersectSHP = (TEMP_GRID_FOLDER + 'intersect_lakes.shp').format(**self.string_args)
         self.string_args['ext'] = 'csv'
         dbfFile2 = (SAMPLE_DBF_FOLDER + SAMPLE_PTS_FILE).format(**self.string_args)
         self.string_args['ext'] = 'dbf'
 
-        arcpy.Buffer_analysis(SAMPLE_POINTS_FILE, BUFFERS_90M_FILE, "90 Meters", "FULL", "ROUND", "NONE", "")
+        arcpy.Buffer_analysis(
+            SAMPLE_POINTS_FILE, BUFFERS_90M_FILE, "90 Meters", "FULL", "ROUND", "NONE", ""
+        )
+
         arcpy.Intersect_analysis(intersectParam1, intersectSHP, "ALL", "", "INPUT")
-        arcpy.AddField_management(intersectSHP, "Zone_FID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+
+        arcpy.AddField_management(
+            intersectSHP, "Zone_FID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""
+        )
+
         arcpy.CalculateField_management(intersectSHP, "Zone_FID", "[FID]", "VB", "")
-        arcpy.ExportXYv_stats(intersectSHP, "FID_output;SiteCode;Year;Month;Day;Source;Date_freef;DOC;CDOM;CHL;Zone_FID", "COMMA", dbfFile2, "NO_FIELD_NAMES")
-        arcpy.gp.toolbox = "C:/2_ALEM_Lakes_Project/3.Scripts_for_Analyses/SplitLayerByAttributes/SplitLayerByAttributes.tbx";
-        arcpy.gp.SplitLayerByAttributes(intersectSHP, "FID", "FID_", POINTS_SPLIT_FOLDER.format(**self.string_args))
+
+        fields = "FID_output;SiteCode;Year;Month;Day;Source;Date_freef;DOC;CDOM;CHL;Zone_FID"
+
+        arcpy.ExportXYv_stats(intersectSHP, fields, "COMMA", dbfFile2, "NO_FIELD_NAMES")
+
+        arcpy.gp.toolbox = (TBX_STR)
+
+        arcpy.gp.SplitLayerByAttributes(
+            intersectSHP, "FID", "FID_", POINTS_SPLIT_FOLDER.format(**self.string_args)
+        )
 
         for [band_name, band_folder] in self.band_parameters:
             print('Processing band {}'.format(band_name))
@@ -331,7 +377,9 @@ class ALEMObject():
                 arcpy.gp.ExtractByMask_sa(band_folder, iterationFile, outFolder1)
                 arcpy.gp.RasterCalculator_sa("Int(\"{}\" * 0)".format(outFolder1), outFolder2)
                 arcpy.BuildRasterAttributeTable_management(outFolder2, "NONE")
-                arcpy.gp.ZonalStatisticsAsTable_sa(outFolder2, "VALUE", outFolder1, dbfFile1, "DATA", "ALL")
+                arcpy.gp.ZonalStatisticsAsTable_sa(
+                    outFolder2, "VALUE", outFolder1, dbfFile1, "DATA", "ALL"
+                )
 
         logger.info('Performed zstat points analysis for scene {scene}'.format(**self.string_args))
         return None
@@ -339,12 +387,16 @@ class ALEMObject():
     def arcgis_zstat_selected_points_analysis(self, logger=defaultLogger):
 
         #arcpy.ImportToolbox("Model Functions")
-        arcpy.ImportToolbox("C:\\2_ALEM_Lakes_Project\\3.Scripts_for_Analyses\\SplitLayerByAttributes\\SplitLayerByAttributes.tbx")
-        arcpy.gp.toolbox = "C:/2_ALEM_Lakes_Project/3.Scripts_for_Analyses/SplitLayerByAttributes/SplitLayerByAttributes.tbx"
+        arcpy.ImportToolbox(TBX_LOCATION)
+        arcpy.gp.toolbox = TBX_STR
 
         #Split points into separate files
         self.string_args['ext'] = 'dbf'
-        intersectParam1 = SEL_BUFFERS_90M_FILE + ' #;' + (BUFFERS_FOLDER + BUFFER_FILE).format(**self.string_args) + ' #'
+        intersectParam1 = (
+            SEL_BUFFERS_90M_FILE + ' #;' + 
+            (BUFFERS_FOLDER + BUFFER_FILE).format(**self.string_args) + ' #'
+        )
+
         intersectSHP = TEMP_GRID_FOLDER.format(**self.string_args) + 'intersect_sel_lakes.shp'
         dbfFile2 = (SEL_POINTS_FOLDER + SEL_POINTS_FILE).format(**self.string_args)
 
@@ -352,12 +404,22 @@ class ALEMObject():
             arcpy.Intersect_analysis(intersectParam1, intersectSHP, "ALL", "", "INPUT")
 
         if not os.path.exists(dbfFile2) and not os.path.exists(dbfFile2.replace('dbf','csv')):
-            arcpy.AddField_management(intersectSHP, "Zone_FID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+            arcpy.AddField_management(
+                intersectSHP, "Zone_FID", "LONG", "", "", "", "", "NULLABLE", "NON_REQUIRED", ""
+            )
             arcpy.CalculateField_management(intersectSHP, "Zone_FID", "[FID]", "VB", "")
-            arcpy.ExportXYv_stats(intersectSHP, "FID;SubSite;SiteCode;Count;CDOM", "COMMA", dbfFile2, "ADD_FIELD_NAMES")
 
-        if not os.path.exists((SEL_SPLIT_FOLDER + 'FID_00.shp').format(**self.string_args)) and not os.path.exists((SEL_SPLIT_FOLDER + 'FID_0.shp').format(**self.string_args)):
-            arcpy.gp.SplitLayerByAttributes(intersectSHP, "FID", "FID_", SEL_SPLIT_FOLDER.format(**self.string_args))
+            arcpy.ExportXYv_stats(
+                intersectSHP, "FID;SubSite;SiteCode;Count;CDOM", "COMMA",
+                dbfFile2, "ADD_FIELD_NAMES"
+            )
+
+        if (not os.path.exists((SEL_SPLIT_FOLDER + 'FID_00.shp').format(**self.string_args)) 
+            and not os.path.exists((SEL_SPLIT_FOLDER + 'FID_0.shp').format(**self.string_args))):
+
+            arcpy.gp.SplitLayerByAttributes(
+                intersectSHP, "FID", "FID_", SEL_SPLIT_FOLDER.format(**self.string_args)
+            )
 
         for [band_name, band_folder] in self.band_parameters:
             self.string_args['band']=band_name
@@ -368,16 +430,21 @@ class ALEMObject():
             #Iterate through each file created when splitting points
             for iterationFile in glob((SEL_SPLIT_FOLDER + 'FID_*.shp').format(**self.string_args)):
                 FID = iterationFile.split('\\')[-1].split('.')[0]
-                dbfFile1 = (SEL_TEMP_DBF_FOLDER + SEL_BANDS_FILE_CALC).format(FID=FID, **self.string_args)
+                dbfFile1 = (
+                    SEL_TEMP_DBF_FOLDER + SEL_BANDS_FILE_CALC).format(FID=FID, **self.string_args
+                )
                 if not os.path.exists(dbfFile1) and not os.path.exists(dbfFile1[0:-3] + 'csv'):
                     print(dbfFile1)
                     arcpy.gp.ExtractByMask_sa(band_folder, iterationFile, outFolder1)
                     arcpy.gp.RasterCalculator_sa("Int(\"{}\" * 0)".format(outFolder1), outFolder2)
                     time.sleep(5)
                     arcpy.BuildRasterAttributeTable_management(outFolder2, "NONE")
-                    arcpy.gp.ZonalStatisticsAsTable_sa(outFolder2, "VALUE", outFolder1, dbfFile1, "DATA", "ALL")
+                    arcpy.gp.ZonalStatisticsAsTable_sa(
+                        outFolder2, "VALUE", outFolder1, dbfFile1, "DATA", "ALL"
+                    )
 
-        logger.info('Performed selected points analysis for scene {scene}'.format(**self.string_args))
+        logger.info('Performed selected points analysis for scene {scene}'
+            .format(**self.string_args))
         return None
 
     def arcgis_zstat_analysis(self, logger=defaultLogger):
@@ -473,12 +540,24 @@ class ALEMObject():
         #Create bands file for each band/BR
         for [band_name, band_folder] in self.band_parameters:
             self.string_args['band']=band_name
+
             header1 = ['CJRS_LAKE', 'COUNT_CDOM', 'CDOM', band_name.upper()]
-            header2 = ['CJRS_LAKE', band_name.upper()+'_COUNT', band_name.upper()+'_AREA', band_name.upper()+'_MIN',band_name.upper()+'_MAX',band_name.upper()+'_RANGE',band_name.upper()+'_MEAN', band_name.upper()+'_STD']
+            header2 = [
+                'CJRS_LAKE', 
+                band_name.upper()+'_COUNT', 
+                band_name.upper()+'_AREA', 
+                band_name.upper()+'_MIN',
+                band_name.upper()+'_MAX',
+                band_name.upper()+'_RANGE',
+                band_name.upper()+'_MEAN', 
+                band_name.upper()+'_STD'
+            ]
             listOut1 = [header1]
             listOut2 = [header2]
+
             #For each row in SEL_POINTS_FILE, get band value from split DB
-            with open((SEL_POINTS_FOLDER + SEL_POINTS_FILE).format(**self.string_args), 'r') as selPointsFile:
+            fn = (SEL_POINTS_FOLDER + SEL_POINTS_FILE).format(**self.string_args)
+            with open(fn, 'r') as selPointsFile:
                 selPointsFile.readline()
                 for selPointsRow in selPointsFile:
                     selPointsRow = selPointsRow.split(',')
@@ -489,9 +568,13 @@ class ALEMObject():
                     rowOut1.append(selPointsRow[5])
                     rowOut1.append(selPointsRow[6])
                     rowOut2.append(LID)
-                    k = len(glob((SEL_SPLIT_FOLDER + 'FID_*.shp').format(**self.string_args))[0].split('\\')[-1]) - 8
+
+                    shpFn = (SEL_SPLIT_FOLDER + 'FID_*.shp').format(**self.string_args)
+                    k = len(glob(shpFn)[0].split('\\')[-1]) - 8
                     FID = ('FID_{0:0>' + str(k) + '}').format(selPointsRow[2])
-                    with open((SEL_TEMP_DBF_FOLDER + SEL_BANDS_FILE_CALC).format(FID=FID, **self.string_args)) as bandsCalcFile:
+
+                    calcFn = (SEL_TEMP_DBF_FOLDER + SEL_BANDS_FILE_CALC).format(FID=FID, **self.string_args)
+                    with open(calcFn) as bandsCalcFile:
                         bandsCalcFile.readline()
                         bandsCalcRow = bandsCalcFile.readline().split(',')
                     if bandsCalcRow[0] is not "":
@@ -500,8 +583,11 @@ class ALEMObject():
                         listOut1.append(rowOut1)
                         listOut2.append(rowOut2)
 
-            write_list_to_csv(listOut1, (SEL_POINTS_FOLDER + SEL_BANDS_FILE).format(**self.string_args))
-            write_list_to_csv(listOut2, (SEL_POINTS_FOLDER + SEL_ALL_STATS_FILE).format(**self.string_args))
+            outFn = (SEL_POINTS_FOLDER + SEL_BANDS_FILE).format(**self.string_args)
+            outFn2 = (SEL_POINTS_FOLDER + SEL_ALL_STATS_FILE).format(**self.string_args)
+
+            write_list_to_csv(listOut1, outFn1)
+            write_list_to_csv(listOut2, outFn2)
 
 
         #Find band minimums
@@ -510,7 +596,13 @@ class ALEMObject():
 
             self.string_args['band'] = band_name
 
-            header = ['CJRS_LAKE', 'COUNT_CDOM', 'CDOM', 'B{}'.format(band), 'B{}_MIN'.format(band)]
+            header = [
+                'CJRS_LAKE', 
+                'COUNT_CDOM', 
+                'CDOM', 
+                'B{}'.format(band), 
+                'B{}_MIN'.format(band)
+            ]
 
             bandsFileFn = (SEL_POINTS_FOLDER + SEL_BANDS_FILE).format(**self.string_args)
             bandsFileList = load_csv_as_list(bandsFileFn)
@@ -528,8 +620,9 @@ class ALEMObject():
             for bandsFileRow in bandsFileList[1:]:
                 bandsMinList.append(bandsFileRow + [bandMin])
 
-            write_list_to_csv(bandsMinList, (SEL_POINTS_FOLDER + SEL_BANDS_MIN_FILE).format(**self.string_args))
-
+            write_list_to_csv(
+                bandsMinList, (SEL_POINTS_FOLDER + SEL_BANDS_MIN_FILE).format(**self.string_args)
+            )
 
         #Merge all bands
         self.string_args['band']='all'
@@ -539,16 +632,18 @@ class ALEMObject():
         for (band_name, band_folder) in self.band_parameters:
             self.string_args['band'] = band_name
             if len(band_name) < 4:
-                filesToMerge.append((SEL_POINTS_FOLDER + SEL_BANDS_MIN_FILE).format(**self.string_args))
+                fn = (SEL_POINTS_FOLDER + SEL_BANDS_MIN_FILE).format(**self.string_args)
             else:
-                filesToMerge.append((SEL_POINTS_FOLDER + SEL_BANDS_FILE).format(**self.string_args))
+                fn = SEL_POINTS_FOLDER + SEL_BANDS_FILE).format(**self.string_args)
+            
+            filesToMerge.append(fn)
 
         args = ' '.join((fileOut, filesToMerge[0], filesToMerge[1]))
-        os.system('Rscript --arch x64 --vanilla r_scripts\\merge_sel_tables.R {}'.format(args))
+        os.system(RSCRIPT + 'merge_sel_tables.R ' + args)
 
         for fileToMerge in filesToMerge[2:]:
             args = ' '.join((fileOut, fileOut, fileToMerge))
-            os.system('Rscript --arch x64 --vanilla r_scripts\\merge_sel_tables.R {}'.format(args))
+            os.system(RSCRIPT + 'merge_sel_tables.R ' + args)
 
         logger.info('Merged selected points table for scene {scene}.'.format(**self.string_args))
 
@@ -559,7 +654,10 @@ class ALEMObject():
         service = fusionTables.connect()
         VAR = self.string_args['var']
         sampleDataOut = [['NID', VAR, 'CHL' , 'COUNT_' + VAR]]
-        sampleDataOut2 = [['NID', 'MEAN_' + VAR, 'MEDIAN_' + VAR, 'MIN_' + VAR, 'MAX_' + VAR, 'RANGE_' + VAR, 'COUNT_' + VAR, 'STD_' + VAR, 'MEAN_CHL']]
+        sampleDataOut2 = [[
+            'NID', 'MEAN_' + VAR, 'MEDIAN_' + VAR, 'MIN_' + VAR, 'MAX_' + VAR, 
+            'RANGE_' + VAR, 'COUNT_' + VAR, 'STD_' + VAR, 'MEAN_CHL'
+        ]]
         sampleDataOut3 = ['NID, ' + VAR]
         sampleDataOut4 = [['NID', VAR, 'DATE']]
         self.string_args['ext'] = 'csv'
@@ -578,7 +676,11 @@ class ALEMObject():
         sampledLakeCount=0
 
         #Pull sample data for lakes in image
-        sql = 'SELECT SiteCode, {var}, Date_freef, CHL FROM {fid}'.format(fid=ID_LAKE_SAMPLES, **self.string_args)
+        sql = (
+            "SELECT SiteCode, {var}, Date_freef, CHL " +
+            "FROM {fid}"
+        ).format(fid=ID_LAKE_SAMPLES, **self.string_args)
+
         response = service.query().sql(sql=sql).execute()
         sampleData = convert_query_response_to_list(response)
 
@@ -614,7 +716,12 @@ class ALEMObject():
                 else:
                     meanCHL = ''
                 sampleDataOut.append([bandNID, meanCDOM, meanCHL, countCDOM])
-                sampleDataOut2.append([bandNID, meanCDOM, medianCDOM, minCDOM, maxCDOM, rangeCDOM, countCDOM, stdCDOM, meanCHL])
+
+                sampleDataOut2.append([
+                    bandNID, meanCDOM, medianCDOM, minCDOM, 
+                    maxCDOM, rangeCDOM, countCDOM, stdCDOM, meanCHL
+
+                ])
                 sampleDataOut3.append(', '.join([str(bandNID)] + [str(CDOM) for CDOM in allCDOMs]))
                 sampledLakeCount+=1
 
@@ -640,8 +747,17 @@ class ALEMObject():
             sceneIDs.append(row[0])
 
         if not self.sceneId in sceneIDs:
-            columns = ['Path', 'Row', 'Scene_ID', '{var}_Sample_Count'.format(**self.string_args), '{var}_Lake_Count'.format(**self.string_args),'{var}_Sampled_Lake_Count'.format(**self.string_args)]
-            data = [self.sceneId[3:6], self.sceneId[6:9], self.sceneId, str(sampleCount), str(lakeCount),str(sampledLakeCount)]
+            columns = [
+                'Path', 'Row', 'Scene_ID', '{var}_Sample_Count'.format(**self.string_args), 
+                '{var}_Lake_Count'.format(**self.string_args),
+                '{var}_Sampled_Lake_Count'.format(**self.string_args)
+            ]
+
+            data = [
+                self.sceneId[3:6], self.sceneId[6:9], self.sceneId, 
+                str(sampleCount), str(lakeCount),str(sampledLakeCount)
+            ]
+
             listOut = [columns, data]
             fusionTable.insert_list(ID_COUNT, listOut)
 
@@ -654,14 +770,28 @@ class ALEMObject():
         band_names = [band_name for [band_name, band_folder] in self.band_parameters]
         for band in band_names:
             self.string_args['band'] = band
-            args = [path.format(**self.string_args) for path in [(BANDS_DBF_FOLDER + MERGED_FILE), (SAMPLE_DBF_FOLDER + SAMPLE_DATA_FILE), (BANDS_DBF_FOLDER + BANDS_FILE)]]
-            os.system('Rscript --arch x64 --vanilla r_scripts\\merge_tables.R {}'.format(' '.join(args)))
+
+            filenames = [
+                (BANDS_DBF_FOLDER + MERGED_FILE), 
+                (SAMPLE_DBF_FOLDER + SAMPLE_DATA_FILE), 
+                (BANDS_DBF_FOLDER + BANDS_FILE)
+            ]
+
+            paths = [fn.format(**self.string_args) for fn in filenames]
+            args = ' '.join(paths)
+
+            os.system(RSCRIPT + 'merge_tables.R ' + args)
 
             #Merge CDOM stats and band stats
-            filenames = [(BANDS_DBF_FOLDER + ALL_STATS_FILE), (BANDS_DBF_FOLDER + BANDS_FILE_ALL), (SAMPLE_DBF_FOLDER + SAMPLE_STATS_FILE)]
-            paths = [filename.format(**self.string_args) for filename in filenames]
+            filenames = [
+                (BANDS_DBF_FOLDER + ALL_STATS_FILE), 
+                (BANDS_DBF_FOLDER + BANDS_FILE_ALL), 
+                (SAMPLE_DBF_FOLDER + SAMPLE_STATS_FILE)
+            ]
+
+            paths = [fn.format(**self.string_args) for fn in filenames]
             args = ' '.join(paths)
-            os.system('Rscript --arch x64 --vanilla r_scripts\\merge_tables.R {}'.format(args))
+            os.system(RSCRIPT + 'merge_tables.R ' + args)
 
         #Create a file with all bands + CDOM or DOC
         if len(self.band_parameters) > 1:
@@ -672,16 +802,20 @@ class ALEMObject():
             self.string_args['band'] = 'all'
             tableOut = (BANDS_DBF_FOLDER + MERGED_FILE).format(**self.string_args)
 
-            os.system('Rscript --arch x64 --vanilla r_scripts\\merge_tables_all_bands.R {} {} {}'.format(tableOut, tableIn1, tableIn2))
+            args = ' '.join(tableOut, tableIn1, tableIn2))
+
+            os.system(RSCRIPT + 'merge_tables_all_bands.R ' + args)
 
             tableIn1 = tableOut
+
+            args = ' '.join(tableOut, tableIn1, tableIn2))
 
             for [band_name, band_folder] in self.band_parameters[2:]:
                 self.string_args['band']=band_name
                 tableIn2 = (BANDS_DBF_FOLDER + BANDS_FILE).format(**self.string_args)
-                os.system('Rscript --arch x64 --vanilla r_scripts\\merge_tables_all_bands.R {} {} {}'.format(tableOut, tableIn1, tableIn2))
+                os.system(RSCRIPT + 'merge_tables_all_bands.R ' + args)
 
-            os.system('Rscript --arch x64 --vanilla r_scripts\\switcheroo.R {}'.format(tableOut))
+            os.system(RSCRIPT + 'switcheroo.R ' + tableOut)
 
 
         logger.info('Merged CSV tables for scene {scene}'.format(**self.string_args))
@@ -696,7 +830,9 @@ class ALEMObject():
             band = 'b{}'.format(band)
             headers.append('B{}_MIN'.format(band[1:]))
             self.string_args['band'] = band
-            bandsAll = load_csv_as_list((BANDS_DBF_FOLDER + BANDS_FILE_ALL).format(**self.string_args))
+
+            fn = (BANDS_DBF_FOLDER + BANDS_FILE_ALL).format(**self.string_args)
+            bandsAll = load_csv_as_list(fn)
             minimums = [float(row[4]) for row in bandsAll[1:]]
             data.append(np.min(minimums))
 
@@ -706,14 +842,17 @@ class ALEMObject():
 
         #Add b_mins and scene ids to MERGED_FILE(bands=all)
         self.string_args['band'] = 'all'
-        mergedOriginal = load_csv_as_list((BANDS_DBF_FOLDER + MERGED_FILE).format(**self.string_args))
+        fn = (BANDS_DBF_FOLDER + MERGED_FILE).format(**self.string_args)
+        mergedOriginal = load_csv_as_list(fn)
 
         newMerged = [(dataRow + data) for dataRow in mergedOriginal[1:]]
         newMerged.insert(0,(mergedOriginal[0] + headers))
 
-        write_list_to_csv(newMerged, (BANDS_DBF_FOLDER + MERGED_MIN_FILE).format(**self.string_args))
+        fn = (BANDS_DBF_FOLDER + MERGED_MIN_FILE).format(**self.string_args)
+        write_list_to_csv(newMerged, fn)
 
-        os.system('Rscript --arch x64 --vanilla r_scripts\\switcheroo.R {}'.format((BANDS_DBF_FOLDER + MERGED_MIN_FILE).format(**self.string_args)))
+        args = (BANDS_DBF_FOLDER + MERGED_MIN_FILE).format(**self.string_args)
+        os.system(RSCRIPT + 'switcheroo.R ' + args)
 
         return None
 
@@ -723,10 +862,18 @@ class ALEMObject():
         for band in band_names:
             #print('Doing regression for band {} of scene {}'.format(band, self.sceneId))
             self.string_args['band'] = band
-            fns1 = [(BANDS_DBF_FOLDER + filename).format(**self.string_args) for filename in [MERGED_FILE, BANDS_FILE]]
-            fns2 = [(R_OUTPUT_FOLDER + filename).format(**self.string_args) for filename in [R_MODEL_TXT_FILE, R_MODEL_CSV_FILE, R_PDF_FILE, R_PRED_CSV_FILE]]
-            args = fns1 + fns2
-            os.system(('Rscript --arch x64 --vanilla r_scripts\\regression.R {args} > ' + R_OUTPUT_FOLDER + R_STDOUT_FILE).format(args=' '.join(args), **self.string_args))
+
+            fns1 = [(BANDS_DBF_FOLDER + filename).format(**self.string_args) 
+                for filename in [MERGED_FILE, BANDS_FILE]            ]
+
+            fns2 = [(R_OUTPUT_FOLDER + filename).format(**self.string_args) 
+                for filename in [R_MODEL_TXT_FILE, R_MODEL_CSV_FILE, R_PDF_FILE, R_PRED_CSV_FILE]]
+
+            args = ' '.join(fns1 + fns2)
+            stdout = R_OUTPUT_FOLDER + R_STDOUT_FILE
+
+            os.system((RSCRIPT + 'regression.R {} > {}').format(args, stdout)
+
         logger.info('Computed regression for scene {}'.format(self.sceneId))
         return None
 
@@ -737,7 +884,7 @@ class ALEMObject():
         pdfOut = (R_OUTPUT_FOLDER + R_LEAPS_PDF).format(**self.string_args)
         args = ' '.join([csvIn, pdfOut])
         stdOut = R_LEAPS_STDOUT.format(**self.string_args)
-        os.system('Rscript --arch x64 --vanilla r_scripts\\leaps.R {0} > {1}'.format(args, stdOut))
+        os.system(RSCRIPT + 'leaps.R {0} > {1}'.format(args, stdOut))
         return None
 
     def r_regression_prep(self, logger=defaultLogger):
@@ -764,19 +911,30 @@ class ALEMObject():
         service = fusion.connect()
 
         #Check if scene is already in tab;e
-        query = 'SELECT Scene_ID FROM {tableId} WHERE Scene_ID = \'{scene}\''.format(tableId=ID_ESTIMATES, **self.string_args)
+        query = 'SELECT Scene_ID FROM {tableId} WHERE Scene_ID = \'{scene}\'' \
+            .format(tableId=ID_ESTIMATES, **self.string_args)
+
         response = service.query().sql(sql=query).execute()
 
         if not 'rows' in response.keys():
         #if len(response['rows']) > 0:
-            query = 'SELECT NID, Scene_ID, Estimates_Count, Zstat_Mode, Running_Estimate, Running_Delta  FROM {tableId} WHERE Zstat_Mode = \'{zstat_mode}\' ORDER BY Estimates_Count DESC'.format(tableId=ID_ESTIMATES, **self.string_args)
+            query = (
+                'SELECT NID, Scene_ID, Estimates_Count, Zstat_Mode, Running_Estimate, Running_Delta ' +
+                'FROM {tableId} ' +
+                'WHERE Zstat_Mode = \'{zstat_mode}\' ORDER BY Estimates_Count DESC'
+            ).format(tableId=ID_ESTIMATES, **self.string_args)
+
             response = service.query().sql(sql=query).execute()
+
             if 'rows' in response.keys():
                 oldEstimates = convert_query_response_to_list(response)
             else:
                 oldEstimates = None
 
-            columns = ['NID', 'Scene_ID', 'Estimates_Count', 'Zstat_Mode', 'Estimate', 'Delta', 'Running_Estimate', 'Running_Delta']
+            columns = [
+                'NID', 'Scene_ID', 'Estimates_Count', 'Zstat_Mode', 
+                'Estimate', 'Delta', 'Running_Estimate', 'Running_Delta'
+            ]
             listOut = [columns]
 
             for newEstimate in newEstimates[1:]:
@@ -798,13 +956,19 @@ class ALEMObject():
                         delta_a = float(oldEstimate[5])
                         x_b = float(newEstimate[3])
                         delta_b = float(newEstimate[4])
-                        delta_ab = math.sqrt(1.0 / ((1.0 / math.pow(delta_a, 2)) + (1.0 / math.pow(delta_b, 2))))
-                        x_ab = math.pow(delta_ab, 2) * (x_a / math.pow(delta_a, 2)+ x_b / math.pow(delta_b, 2))
+                        delta_ab = math.sqrt(
+                            1.0 / ((1.0 / math.pow(delta_a, 2)) + (1.0 / math.pow(delta_b, 2)))
+                        )
+                        x_ab = math.pow(delta_ab, 2) * (x_a / math.pow(delta_a, 2)+ x_b /
+                             math.pow(delta_b, 2))
 
                         newRunning = x_ab
                         newRunningDelta = delta_ab
 
-                listOut.append([NID, self.sceneId, estimateCount, self.string_args['zstat_mode'], newEstimate[2], newEstimate[3], newRunning, newRunningDelta])
+                listOut.append([
+                    NID, self.sceneId, estimateCount, self.string_args['zstat_mode'], 
+                    newEstimate[2], newEstimate[3], newRunning, newRunningDelta
+                ])
 
             tempCSV = (TEMP_DBF_FOLDER + 'temp.csv').format(**self.string_args)
             write_list_to_csv(listOut[1:], tempCSV)

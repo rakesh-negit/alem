@@ -1,19 +1,17 @@
-# -*- coding: utf-8 -*-
+# Standard
+import pickle, os, csv, shutil, math
+import xml.etree.ElementTree as ET
+import numpy as np
+from glob import glob
+
+# Installed
+from dbfpy import dbf
+
+# ALEM
 import alemobject
 from settings import *
-import pickle
-#import logging
-import os
-from glob import glob
-import shutil
-import xml.etree.ElementTree as ET
-from dbfpy import dbf
-import csv
 from utilfunctions import *
-import numpy as np
-import math
 
-#logger = logging.getLogger(__name__)
 
 def convert_5_to_dn():
     string_args = {'ext':'csv', 'band':'all', 'scene':'all', 'zstat_mode':'pts'}
@@ -26,7 +24,11 @@ def convert_5_to_dn():
 
     fnOut = (SEL_POINTS_FOLDER + '5DN_ALL_ALL_PTS_ORIGINAL_DN.csv')
 
-    newHeader = ('CJRS_LAKE', 'CDOM', 'COUNT_CDOM', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'SCENE_ID')
+    newHeader = (
+        'CJRS_LAKE', 'CDOM', 'COUNT_CDOM', 
+        'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'SCENE_ID'
+    )
+
     eyes = [header.index(columnTitle) for columnTitle in newHeader]
 
     linesOut = []
@@ -221,7 +223,7 @@ def r_tree_prep(mode='poly', logger=logger):
     #csvIn = (COMBINED_FOLDER + MERGED_MIN_FILE).format(**string_args)
     csvOut = (R_TREE_FOLDER + TREE_IN_FILE).format(**string_args)
 
-    os.system('Rscript --arch x64 --vanilla r_scripts\\tree_prep.R {} {}'.format(csvIn, csvOut))
+    os.system(RSCRIPT + 'tree_prep.R {} {}'.format(csvIn, csvOut))
 
     #allBandsFn = (SEL_POINTS_FOLDER + SEL_MERGED_FILE).format(**string_args)
     treeFn = csvOut
@@ -254,7 +256,6 @@ def r_tree_prep(mode='poly', logger=logger):
             treeAvgList.append([previousNID] + avgRow)
             row = [float(value) for value in treeRow[1:]]
             rows = [row]
-
 
 
     write_list_to_csv(treeAvgList, treeAvgFn)
@@ -299,9 +300,10 @@ def r_tree_prep(mode='poly', logger=logger):
 
     args = ' '.join((tableOut, tableIn1, tableIn2))
 
-    os.system('Rscript --arch x64 --vanilla r_scripts\\merge_tables_raw.R {}'.format(args))
+    os.system(RSCRIPT + 'merge_tables_raw.R {}'.format(args))
 
     return None
+
 
 def filter_tree_lakes(logger=logger):
     string_args = {}
@@ -337,6 +339,7 @@ def filter_tree_lakes(logger=logger):
     write_list_to_csv(remTreeList, remTreeFn)
     return None
 
+
 def r_tree_testing(logger=logger):
     string_args  = {}
     string_args['scene']='all'
@@ -355,9 +358,10 @@ def r_tree_testing(logger=logger):
     args = ' '.join((treeFn, treePdf, predCsv, ktFn))
     outputFolder = (R_TREE_FOLDER + '1_r_tree_testing_output.txt').format(**string_args)
 
-    os.system('Rscript --arch x64 --vanilla r_scripts\\tree_testing.R {} > {}'.format(args, outputFolder))
+    os.system(RSCRIPT + 'tree_testing.R {} > {}'.format(args, outputFolder))
 
     return None
+
 
 def r_tree_prediction(logger=logger):
     string_args = {}
@@ -376,7 +380,7 @@ def r_tree_prediction(logger=logger):
 
     args = ' '.join((treeBuildFn, treePredFn, treePdf, predCsv, ktFn))
 
-    os.system('Rscript --arch x64 --vanilla r_scripts\\tree_prediction.R {}'.format(args))
+    os.system(RSCRIPT + 'tree_prediction.R {}'.format(args))
 
 def r_tree(logger=logger):
     r_tree_prep()
@@ -426,7 +430,12 @@ def combined_regression(imagesListFn='images.txt', zstat_mode='poly'):
             mergedCSV = (COMBINED_FOLDER + MERGED_FILE).format(**string_args)
             with open(mergedCSV, 'w') as fOut1, open(statsCSV, 'w') as fOut2:
                 fOut1.write('NID, {}, CHL, BAND, SCENEID\n'.format(var))
-                fOut2.write('NID, COUNT, AREA, MIN, MAX, RANGE, MEAN, STD, SUM, MEAN_{0}, MEDIAN_{0}, MIN_{0}, MAX_{0}, RANGE_{0}, COUNT_{0}, STD_{0},CHL, SCENEID\n'.format(var))
+                fOut2.write((
+                    'NID, COUNT, AREA, MIN, MAX, RANGE, MEAN, STD, ' +
+                    'SUM, MEAN_{0}, MEDIAN_{0}, MIN_{0}, MAX_{0}, RANGE_{0},' + 
+                    'COUNT_{0}, STD_{0},CHL, SCENEID\n'
+                    ).format(var)
+                )
                 for sceneId in open(imagesListFn, 'r'):
                     sceneId = sceneId.strip()
                     string_args['scene'] = sceneId
@@ -451,10 +460,15 @@ def combined_regression(imagesListFn='images.txt', zstat_mode='poly'):
             #Compute regression
             string_args['scene']='all'
             fns = [R_MODEL_TXT_FILE, R_MODEL_CSV_FILE, R_PDF_FILE, R_PRED_CSV_FILE]
-            args = [mergedCSV, mergedCSV] + [(COMBINED_FOLDER + fn).format(**string_args) for fn in fns]
+            paths = [mergedCSV, mergedCSV] + [(COMBINED_FOLDER + fn).format(**string_args) 
+                for fn in fns]
+
+            args = ' '.join(paths)
             stdout = (COMBINED_FOLDER + R_STDOUT_FILE).format(**string_args)
 
-            os.system('Rscript --arch x64 --vanilla r_scripts\\regression.R {args} > {stdout}'.format(args=' '.join(args),stdout=stdout))
+
+
+            os.system(RSCRIPT + 'regression.R {args} > {stdout}'.format(args=args,stdout=stdout))
 
         #Concatenate merged file for all bands with min band values for DOS
         string_args['band']='all'
@@ -495,7 +509,7 @@ def selected_regression(csvFn):
 
     args = ' '.join([csvPath, txtOutput, csvOutput, pdfOutput])
 
-    os.system('Rscript --arch x64 --vanilla r_scripts\\regression_no_pred.R {0} > {1}'.format(args, stdOutput))
+    os.system(RSCRIPT + 'regression_no_pred.R {0} > {1}'.format(args, stdOutput))
 
 def sel_combine_estimates():
     fnList = SELREG_FOLDER + "files_to_combine.txt"
@@ -537,12 +551,19 @@ def sel_combine_estimates():
 
 
 def r_leaps_combined():
-    string_args = {'ext':'csv', 'band':'all','scene':'all','bqa_or_rad':'bqa','zstat_mode':'poly','var':'CDOM'}
+    string_args = {
+        'ext':'csv', 
+        'band':'all','scene':'all',
+        'bqa_or_rad':'bqa',
+        'zstat_mode':'poly',
+        'var':'CDOM'
+    }
+
     csvIn = (COMBINED_FOLDER + MERGED_FILE).format(**string_args)
     pdfOut = (COMBINED_FOLDER + R_LEAPS_PDF).format(**string_args)
     args = ' '.join([csvIn, pdfOut])
     stdOut = (COMBINED_FOLDER + 'leaps_stdout.txt').format(**string_args)
-    os.system('Rscript --arch x64 --vanilla r_scripts\\leaps.R {0} > {1}'.format(args, stdOut))
+    os.system(RSCRIPT + 'leaps.R {0} > {1}'.format(args, stdOut))
     return None
 
 
@@ -595,8 +616,10 @@ def check_state(imgListFn):
 
                     #Check that folders exists
                     val = 'y'
-                    if not os.path.exists(IMAGE_FOLDER.format(**obj.string_args)) or not os.path.exists(R_LEAPS_FOLDER.format(**obj.string_args)):
+                    if (not os.path.exists(IMAGE_FOLDER.format(**obj.string_args)) 
+                        or not os.path.exists(R_LEAPS_FOLDER.format(**obj.string_args))):
                         val = 'n'
+
                     rowOut.append(val)
 
                     vals=['y', 'y']
@@ -604,9 +627,11 @@ def check_state(imgListFn):
                     #Check TOA and BQA rasters
                     if hasattr(obj, 'unique_bands'):
                         for band in obj.unique_bands:
-                            if not os.path.exists(TEMP_GRID_FOLDER.format(**obj.string_args) + 'toa_grids\\toa_rad_b{}'.format(band)):
+                            fn = TEMP_GRID_FOLDER.format(**obj.string_args) + 'toa_grids\\toa_rad_b{}'.format(band)
+                            if not os.path.exists(fn):
                                 vals[0]='n'
-                            if not os.path.exists(TEMP_GRID_FOLDER.format(**obj.string_args) + 'bqa_grids\\toa_bqa_b{}'.format(band)):
+                            fn = TEMP_GRID_FOLDER.format(**obj.string_args) + 'bqa_grids\\toa_bqa_b{}'.format(band)
+                            if not os.path.exists(fn):
                                 vals[1]='n'
                     else:
                         vals = ['n', 'n']
@@ -617,7 +642,8 @@ def check_state(imgListFn):
                     val = 'y'
                     if hasattr(obj, 'bands') and 'bdivb' in obj.bands.keys():
                         for [x,y] in obj.bands['bdivb']:
-                            if not os.path.exists(TEMP_GRID_FOLDER.format(**obj.string_args) + 'br_grids\\b{}divb{}'.format(x,y)):
+                            fn = TEMP_GRID_FOLDER.format(**obj.string_args) + 'br_grids\\b{}divb{}'.format(x,y)
+                            if not os.path.exists(fn):
                                 val = 'n'
                     else:
                         val='n'
@@ -627,7 +653,8 @@ def check_state(imgListFn):
                     val = 'y'
                     if hasattr(obj, 'bands') and 'bxb' in obj.bands.keys():
                         for [x,y] in obj.bands['bxb']:
-                            if not os.path.exists(TEMP_GRID_FOLDER.format(**obj.string_args) + 'br_grids\\b{}x{}'.format(x,y)):
+                            fn = TEMP_GRID_FOLDER.format(**obj.string_args) + 'br_grids\\b{}x{}'.format(x,y)
+                            if not os.path.exists(fn):
                                 val = 'n'
                     else:
                         val='n'

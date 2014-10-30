@@ -1,7 +1,4 @@
-import logging
-import csv
-import contextlib
-import sys
+import logging, csv, contextlib, sys
 
 logger = logging.getLogger(__name__)
 
