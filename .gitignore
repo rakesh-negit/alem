@@ -56,6 +56,8 @@ target/
 # Settings (with secure info)
 settings.py
 
-r_scripts/treetesting/
+#R scripts
+*.R
+r_scripts/
 
 alem.*
